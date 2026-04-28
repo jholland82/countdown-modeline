@@ -52,6 +52,7 @@
 
 (require 'seq)
 (require 'subr-x)
+(require 'time-date)
 (require 'subr-x)
 
 (defgroup countdown-modeline nil
@@ -152,7 +153,7 @@ greater than this number.")
 
 (defun countdown-modeline--today ()
   "Return today's absolute day number in local time."
-  (date-to-day (format-time-string "%Y-%m-%d")))
+  (time-to-days (current-time)))
 
 (defun countdown-modeline--parse-date (date)
   "Return the absolute day number for DATE, or nil if DATE is invalid.
@@ -161,14 +162,12 @@ and semantic: \"2026-13-45\" is rejected by round-tripping through
 `encode-time'."
   (when (and (stringp date)
              (string-match-p "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\'" date))
-    (let ((year  (string-to-number (substring date 0 4)))
-          (month (string-to-number (substring date 5 7)))
-          (day   (string-to-number (substring date 8 10))))
-      (when (equal date
-                   (format-time-string
-                    "%Y-%m-%d"
-                    (encode-time 0 0 0 day month year)))
-        (date-to-day date)))))
+    (let* ((year    (string-to-number (substring date 0 4)))
+           (month   (string-to-number (substring date 5 7)))
+           (day     (string-to-number (substring date 8 10)))
+           (encoded (encode-time 0 0 0 day month year)))
+      (when (equal date (format-time-string "%Y-%m-%d" encoded))
+        (time-to-days encoded)))))
 
 (defun countdown-modeline--days-until (date)
   "Return days from today until DATE, or nil if DATE is invalid.
