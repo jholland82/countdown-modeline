@@ -422,7 +422,7 @@ loadable for backward compatibility."
   (interactive)
   (unless (countdown-modeline--valid-events-p countdown-modeline-events)
     (user-error "Refusing to save: countdown-modeline-events is malformed"))
-  (when-let ((dir (file-name-directory countdown-modeline-events-file)))
+  (when-let* ((dir (file-name-directory countdown-modeline-events-file)))
     (make-directory dir t))
   (with-temp-file countdown-modeline-events-file
     (insert ";;; countdown-modeline events.  Auto-generated; safe to edit.\n")
