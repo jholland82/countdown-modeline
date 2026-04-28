@@ -2,7 +2,7 @@
 
 ;; Author: Jeffrey Holland <jeff.holland@gmail.com>
 ;; Maintainer: Jeffrey Holland <jeff.holland@gmail.com>
-;; Version: 0.1.0
+;; Version: 1.0.0
 ;; URL: https://github.com/jeffreyholland/countdown-modeline
 ;; Keywords: convenience, modeline
 ;; Package-Requires: ((emacs "27.1"))
