@@ -161,12 +161,13 @@ and semantic: \"2026-13-45\" is rejected by round-tripping through
 `encode-time'."
   (when (and (stringp date)
              (string-match-p "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\'" date))
-    (pcase-let ((`(,_ ,_ ,_ ,day ,month ,year . ,_) (parse-time-string date)))
-      (when (and day month year
-                 (equal date
-                        (format-time-string
-                         "%Y-%m-%d"
-                         (encode-time 0 0 0 day month year))))
+    (let ((year  (string-to-number (substring date 0 4)))
+          (month (string-to-number (substring date 5 7)))
+          (day   (string-to-number (substring date 8 10))))
+      (when (equal date
+                   (format-time-string
+                    "%Y-%m-%d"
+                    (encode-time 0 0 0 day month year)))
         (date-to-day date)))))
 
 (defun countdown-modeline--days-until (date)
