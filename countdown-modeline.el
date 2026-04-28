@@ -51,6 +51,8 @@
 ;;; Code:
 
 (require 'seq)
+(require 'subr-x)
+(require 'subr-x)
 
 (defgroup countdown-modeline nil
   "Display days until an event in the modeline."
@@ -317,21 +319,21 @@ updating."
           (default-prefix (or (cadr existing) ""))
           (date (read-string
                  (format "Event date (YYYY-MM-DD)%s: "
-                         (if (string-empty-p default-date) ""
+                         (if (string-blank-p default-date) ""
                            (format " (default %s)" default-date)))
                  nil nil default-date))
           (raw-prefix (read-string
                        (format "Prefix, e.g. emoji (RET to %s): "
-                               (if (string-empty-p default-prefix)
+                               (if (string-blank-p default-prefix)
                                    "skip"
                                  (format "keep %s" default-prefix)))
                        nil nil default-prefix)))
-     (list name date (and (not (string-empty-p raw-prefix)) raw-prefix))))
-  (when (or (not (stringp name)) (string-empty-p name))
+     (list name date (and (not (string-blank-p raw-prefix)) raw-prefix))))
+  (when (or (not (stringp name)) (string-blank-p name))
     (user-error "Event name must be a non-empty string"))
   (unless (countdown-modeline--parse-date date)
     (user-error "Invalid event date %S (expected YYYY-MM-DD)" date))
-  (when (and prefix (string-empty-p prefix))
+  (when (and prefix (string-blank-p prefix))
     (setq prefix nil))
   (setf (alist-get name countdown-modeline-events nil nil #'equal)
         (if prefix (list date prefix) (list date)))

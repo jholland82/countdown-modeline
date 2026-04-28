@@ -165,6 +165,14 @@
                   :type 'user-error)
     (should (null countdown-modeline-events))))
 
+(ert-deftest countdown-modeline-test-add-event-rejects-whitespace-name ()
+  (let ((countdown-modeline-events nil))
+    (should-error (countdown-modeline-add-event "   " "2026-01-01")
+                  :type 'user-error)
+    (should-error (countdown-modeline-add-event "\t" "2026-01-01")
+                  :type 'user-error)
+    (should (null countdown-modeline-events))))
+
 (ert-deftest countdown-modeline-test-add-event-rejects-bad-date ()
   (let ((countdown-modeline-events nil))
     (should-error (countdown-modeline-add-event "X" "not-a-date")
@@ -178,6 +186,11 @@
 (ert-deftest countdown-modeline-test-add-event-empty-prefix-stored-as-nil ()
   (let ((countdown-modeline-events nil))
     (countdown-modeline-add-event "X" "2026-01-01" "")
+    (should (equal countdown-modeline-events '(("X" "2026-01-01"))))))
+
+(ert-deftest countdown-modeline-test-add-event-whitespace-prefix-stored-as-nil ()
+  (let ((countdown-modeline-events nil))
+    (countdown-modeline-add-event "X" "2026-01-01" "   ")
     (should (equal countdown-modeline-events '(("X" "2026-01-01"))))))
 
 (ert-deftest countdown-modeline-test-remove-event ()
