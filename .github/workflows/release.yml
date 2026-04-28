@@ -1,0 +1,44 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches package Version header
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          version=$(awk -F': ' '/^;; Version:/ { print $2; exit }' countdown-modeline.el)
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match 'Version: $version' in countdown-modeline.el"
+            exit 1
+          fi
+
+      - name: Extract release notes for this version from CHANGELOG.md
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          awk -v tag="$tag" '
+            $0 ~ "^## \\[" tag "\\]"     { inside=1; next }
+            inside && /^## /             { exit }
+            inside && /^\[[^]]+\]:[ \t]/ { exit }
+            inside                       { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG entry found for version $tag"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
