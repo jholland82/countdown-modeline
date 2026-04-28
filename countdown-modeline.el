@@ -2,8 +2,8 @@
 
 ;; Author: Jeffrey Holland <jeff.holland@gmail.com>
 ;; Maintainer: Jeffrey Holland <jeff.holland@gmail.com>
-;; Version: 1.0.0
-;; URL: https://github.com/jeffreyholland/countdown-modeline
+;; Version: 1.0.1
+;; URL: https://github.com/jholland82/countdown-modeline
 ;; Keywords: convenience, modeline
 ;; Package-Requires: ((emacs "27.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later

@@ -16,7 +16,7 @@ Works with both the default Emacs modeline and [doom-modeline](https://github.co
 
 ```elisp
 (use-package countdown-modeline
-  :vc (:url "https://github.com/jeffreyholland/countdown-modeline" :rev :newest)
+  :vc (:url "https://github.com/jholland82/countdown-modeline" :rev :newest)
   :config
   (setq countdown-modeline-events
         '(("Launch Day" "2026-12-25" "🚀")
@@ -29,7 +29,7 @@ Works with both the default Emacs modeline and [doom-modeline](https://github.co
 
 ```elisp
 (use-package countdown-modeline
-  :straight (:host github :repo "jeffreyholland/countdown-modeline")
+  :straight (:host github :repo "jholland82/countdown-modeline")
   :config
   (setq countdown-modeline-events
         '(("Launch Day" "2026-12-25" "🚀")
