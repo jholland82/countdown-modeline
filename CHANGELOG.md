@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-06 [Released]
+
+### Added
+
+- `countdown-modeline-count-upcoming-events` returns the number of upcoming events (today counts as upcoming; past and invalid-date events are skipped).
+- `countdown-modeline-count-past-events` returns the number of past events (today is not past; invalid-date events are skipped).
+- `countdown-modeline-count-all-events` returns the total event count, including past and invalid-date entries.
+- All three commands message the count with proper pluralization when called interactively, and return the integer for use in Lisp.
+
 ## [1.0.1] - 2026-04-28 [Released]
 
 ### Fixed
@@ -27,6 +36,7 @@ Initial release.
 - Versioned persistence to `countdown-modeline-events-file` (defaults to `~/.emacs.d/countdown-modeline-events.eld`); legacy bare-list files load and are upgraded on next save.
 - `countdown-modeline-save-events-on-change` defcustom for automatic persistence after every add or remove. Save failures surface as a warning rather than an error.
 
-[Unreleased]: https://github.com/jholland82/countdown-modeline/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jholland82/countdown-modeline/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.1.0
 [1.0.1]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.0.1
 [1.0.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.0.0

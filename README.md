@@ -69,6 +69,9 @@ If you change `countdown-modeline-events` via `setq` after the mode is enabled, 
 | `M-x countdown-modeline-add-event` | Add or update an event. Offers completion over existing names; empty RET on the date or prefix prompt keeps the existing value when updating. |
 | `M-x countdown-modeline-remove-event` | Remove an event by name (with completion). |
 | `M-x countdown-modeline-list-events` | Show all events in a help buffer, sorted by days remaining (soonest first; past events at the bottom). |
+| `M-x countdown-modeline-count-upcoming-events` | Display the number of upcoming events (past and invalid-date events are skipped). |
+| `M-x countdown-modeline-count-past-events` | Display the number of past events (upcoming and invalid-date events are skipped). |
+| `M-x countdown-modeline-count-all-events` | Display the total number of events configured, including past and invalid-date entries. |
 | `M-x countdown-modeline-refresh` | Recompute the modeline string. Useful after `setq`. |
 | `M-x countdown-modeline-save-events` | Write current events to `countdown-modeline-events-file`. |
 | `M-x countdown-modeline-load-events` | Read events from `countdown-modeline-events-file`. The file is validated before its contents replace the current list. |

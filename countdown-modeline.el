@@ -2,7 +2,7 @@
 
 ;; Author: Jeffrey Holland <jeff.holland@gmail.com>
 ;; Maintainer: Jeffrey Holland <jeff.holland@gmail.com>
-;; Version: 1.0.1
+;; Version: 1.1.0
 ;; URL: https://github.com/jholland82/countdown-modeline
 ;; Keywords: convenience, modeline
 ;; Package-Requires: ((emacs "27.1"))
@@ -375,6 +375,59 @@ each group: future ascending (soonest first), past by recency
    ((null days)  (cons 2 0))
    ((>= days 0)  (cons 0 days))
    (t            (cons 1 (- days)))))
+
+(defun countdown-modeline--count-when (predicate)
+  "Return the number of events whose days-until result satisfies PREDICATE.
+Events with invalid dates have a nil days-until and are never counted."
+  (seq-count
+   (lambda (event)
+     (let ((days (countdown-modeline--days-until (nth 1 event))))
+       (and days (funcall predicate days))))
+   countdown-modeline-events))
+
+;;;###autoload
+(defun countdown-modeline-count-upcoming-events ()
+  "Return the number of upcoming events in `countdown-modeline-events'.
+Past events and events with invalid dates are not counted.  An
+event whose date is today counts as upcoming.
+
+When called interactively, also display the count in the echo area."
+  (interactive)
+  (let ((count (countdown-modeline--count-when (lambda (d) (>= d 0)))))
+    (when (called-interactively-p 'interactive)
+      (message "%d upcoming event%s"
+               count
+               (if (= count 1) "" "s")))
+    count))
+
+;;;###autoload
+(defun countdown-modeline-count-past-events ()
+  "Return the number of past events in `countdown-modeline-events'.
+Upcoming events (including today) and events with invalid dates
+are not counted.
+
+When called interactively, also display the count in the echo area."
+  (interactive)
+  (let ((count (countdown-modeline--count-when (lambda (d) (< d 0)))))
+    (when (called-interactively-p 'interactive)
+      (message "%d past event%s"
+               count
+               (if (= count 1) "" "s")))
+    count))
+
+;;;###autoload
+(defun countdown-modeline-count-all-events ()
+  "Return the total number of events in `countdown-modeline-events'.
+Includes past events and events with invalid dates.
+
+When called interactively, also display the count in the echo area."
+  (interactive)
+  (let ((count (length countdown-modeline-events)))
+    (when (called-interactively-p 'interactive)
+      (message "%d event%s configured"
+               count
+               (if (= count 1) "" "s")))
+    count))
 
 ;;;###autoload
 (defun countdown-modeline-list-events ()

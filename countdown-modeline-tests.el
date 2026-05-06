@@ -480,6 +480,81 @@ caller sees a warning, not a propagated error."
           (should (file-directory-p subdir)))
       (delete-directory parent t))))
 
+;;;; count-upcoming-events
+
+(ert-deftest countdown-modeline-test-count-upcoming-empty ()
+  (let ((countdown-modeline-events nil))
+    (should (= 0 (countdown-modeline-count-upcoming-events)))))
+
+(ert-deftest countdown-modeline-test-count-upcoming-all-future ()
+  (let ((countdown-modeline-events
+         (list (list "A" (countdown-modeline-tests--offset-date 5))
+               (list "B" (countdown-modeline-tests--offset-date 10))
+               (list "C" (countdown-modeline-tests--offset-date 30)))))
+    (should (= 3 (countdown-modeline-count-upcoming-events)))))
+
+(ert-deftest countdown-modeline-test-count-upcoming-skips-past ()
+  (let ((countdown-modeline-events
+         (list (list "OldTrip"  (countdown-modeline-tests--offset-date -1))
+               (list "WayOld"   (countdown-modeline-tests--offset-date -100))
+               (list "Vacation" (countdown-modeline-tests--offset-date 5)))))
+    (should (= 1 (countdown-modeline-count-upcoming-events)))))
+
+(ert-deftest countdown-modeline-test-count-upcoming-skips-invalid ()
+  (let ((countdown-modeline-events
+         (list (list "Bad"  "not-a-date")
+               (list "Good" (countdown-modeline-tests--offset-date 5)))))
+    (should (= 1 (countdown-modeline-count-upcoming-events)))))
+
+(ert-deftest countdown-modeline-test-count-upcoming-today-counts ()
+  (let ((countdown-modeline-events
+         (list (list "Today" (countdown-modeline-tests--offset-date 0)))))
+    (should (= 1 (countdown-modeline-count-upcoming-events)))))
+
+;;;; count-past-events
+
+(ert-deftest countdown-modeline-test-count-past-empty ()
+  (let ((countdown-modeline-events nil))
+    (should (= 0 (countdown-modeline-count-past-events)))))
+
+(ert-deftest countdown-modeline-test-count-past-all-past ()
+  (let ((countdown-modeline-events
+         (list (list "A" (countdown-modeline-tests--offset-date -1))
+               (list "B" (countdown-modeline-tests--offset-date -50)))))
+    (should (= 2 (countdown-modeline-count-past-events)))))
+
+(ert-deftest countdown-modeline-test-count-past-skips-upcoming ()
+  (let ((countdown-modeline-events
+         (list (list "Past"   (countdown-modeline-tests--offset-date -3))
+               (list "Future" (countdown-modeline-tests--offset-date 30)))))
+    (should (= 1 (countdown-modeline-count-past-events)))))
+
+(ert-deftest countdown-modeline-test-count-past-skips-invalid ()
+  (let ((countdown-modeline-events
+         (list (list "Bad"  "not-a-date")
+               (list "Past" (countdown-modeline-tests--offset-date -3)))))
+    (should (= 1 (countdown-modeline-count-past-events)))))
+
+(ert-deftest countdown-modeline-test-count-past-today-does-not-count ()
+  (let ((countdown-modeline-events
+         (list (list "Today" (countdown-modeline-tests--offset-date 0)))))
+    (should (= 0 (countdown-modeline-count-past-events)))))
+
+;;;; count-all-events
+
+(ert-deftest countdown-modeline-test-count-all-empty ()
+  (let ((countdown-modeline-events nil))
+    (should (= 0 (countdown-modeline-count-all-events)))))
+
+(ert-deftest countdown-modeline-test-count-all-includes-everything ()
+  "All events count, including past entries and invalid-date entries."
+  (let ((countdown-modeline-events
+         (list (list "Future"  (countdown-modeline-tests--offset-date 5))
+               (list "Past"    (countdown-modeline-tests--offset-date -3))
+               (list "Bad"     "not-a-date")
+               (list "Today"   (countdown-modeline-tests--offset-date 0)))))
+    (should (= 4 (countdown-modeline-count-all-events)))))
+
 (ert-deftest countdown-modeline-test-list-events-empty ()
   (let ((countdown-modeline-events nil))
     (save-window-excursion
