@@ -53,7 +53,6 @@
 (require 'seq)
 (require 'subr-x)
 (require 'time-date)
-(require 'subr-x)
 
 (defgroup countdown-modeline nil
   "Display days until an event in the modeline."
@@ -75,11 +74,10 @@ Example:
         \\='((\"Launch Day\" \"2026-12-25\" \"🚀\")
           (\"Vacation\"   \"2026-07-01\" \"🏖️\")
           (\"Standup\"    \"2026-05-10\")))"
-  :type '(alist :key-type (string :tag "Name")
-                :value-type
-                (list (string :tag "Date (YYYY-MM-DD)")
-                      (choice (const :tag "None" nil)
-                              (string :tag "Prefix"))))
+  :type '(repeat (list (string :tag "Name")
+                       (string :tag "Date (YYYY-MM-DD)")
+                       (choice (const :tag "No prefix" nil)
+                               (string :tag "Prefix"))))
   :set (lambda (sym val)
          (set-default sym val)
          (when (bound-and-true-p countdown-modeline-mode)
@@ -340,11 +338,17 @@ updating."
           (existing (cdr (assoc name countdown-modeline-events)))
           (default-date (or (car existing) ""))
           (default-prefix (or (cadr existing) ""))
-          (date (read-string
-                 (format "Event date (YYYY-MM-DD)%s: "
-                         (if (string-blank-p default-date) ""
-                           (format " (default %s)" default-date)))
-                 nil nil default-date))
+          (date (let ((prompt (format "Event date (YYYY-MM-DD)%s: "
+                                      (if (string-blank-p default-date) ""
+                                        (format " (default %s)"
+                                                default-date))))
+                      (input nil))
+                  (while (not (countdown-modeline--parse-date
+                               (setq input (read-string
+                                            prompt nil nil default-date))))
+                    (message "Invalid date %S; expected YYYY-MM-DD" input)
+                    (sit-for 1))
+                  input))
           (raw-prefix (read-string
                        (format "Prefix, e.g. emoji (RET to %s): "
                                (if (string-blank-p default-prefix)
@@ -394,16 +398,15 @@ events changed; call `countdown-modeline-save-events' to retry."
 Past events and events with invalid dates are excluded.  Each
 returned entry preserves its original (NAME DATE &optional PREFIX)
 shape."
-  (let ((upcoming
-         (seq-filter
-          (lambda (event)
-            (let ((days (countdown-modeline--days-until (nth 1 event))))
-              (and days (>= days 0))))
-          countdown-modeline-events)))
-    (sort (copy-sequence upcoming)
-          (lambda (a b)
-            (< (countdown-modeline--days-until (nth 1 a))
-               (countdown-modeline--days-until (nth 1 b)))))))
+  (let ((decorated
+         (delq nil
+               (mapcar
+                (lambda (event)
+                  (let ((days (countdown-modeline--days-until (nth 1 event))))
+                    (when (and days (>= days 0))
+                      (cons days event))))
+                countdown-modeline-events))))
+    (mapcar #'cdr (sort decorated (lambda (a b) (< (car a) (car b)))))))
 
 (defun countdown-modeline--sort-key (days)
   "Return a (GROUP . SUB) sort key for DAYS remaining.
@@ -631,12 +634,15 @@ to `countdown-modeline-events-file' across sessions."
       (progn
         (countdown-modeline--update)
         (countdown-modeline--schedule-midnight)
+        (unless (listp global-mode-string)
+          (setq global-mode-string (list global-mode-string)))
         (add-to-list 'global-mode-string '(:eval countdown-modeline--string) t))
     (when (timerp countdown-modeline--timer)
       (cancel-timer countdown-modeline--timer)
       (setq countdown-modeline--timer nil))
-    (setq global-mode-string
-          (delete '(:eval countdown-modeline--string) global-mode-string))
+    (when (listp global-mode-string)
+      (setq global-mode-string
+            (delete '(:eval countdown-modeline--string) global-mode-string)))
     (setq countdown-modeline--string nil)
     (force-mode-line-update)))
 
