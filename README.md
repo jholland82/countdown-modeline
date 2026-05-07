@@ -64,7 +64,7 @@ If you change `countdown-modeline-events` via `setq` after the mode is enabled, 
 
 By default, the soonest upcoming event is shown. To pin a specific upcoming event instead, use `M-x countdown-modeline-pin-event`. If the pinned event passes its date or is removed, the display silently falls back to the soonest upcoming event until you pick a new one. Clear the pin with `M-x countdown-modeline-unpin-event`.
 
-The pin lives in `countdown-modeline-pinned-event`, a defcustom — `M-x countdown-modeline-pin-event` only sets the in-memory value for the current session. To make a pin survive across Emacs restarts, save it via Customize (e.g. `M-x customize-save-variable RET countdown-modeline-pinned-event RET`) or set it directly in your init file with `setopt` or `customize-set-variable`.
+`M-x countdown-modeline-pin-event` only sets the pin for the current session. To persist it across restarts, save the `countdown-modeline-pinned-event` defcustom via `M-x customize-save-variable`, or set it in your init file with `setopt`.
 
 ### Interactive commands
 
