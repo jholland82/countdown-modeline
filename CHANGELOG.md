@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-06 [Released]
+
+### Added
+
+- `countdown-modeline-pinned-event` defcustom and the commands `countdown-modeline-pin-event` / `countdown-modeline-unpin-event` let you override the auto-soonest selection and pin a specific upcoming event for the modeline. Completion is offered over upcoming-or-today events only, sorted soonest-first and annotated with each event's prefix, date, and days remaining (columns aligned across candidates). The current pin (or, when none is set, the soonest upcoming event) is the default — an empty RET accepts it; use TAB or your completion UI's navigation keys to choose another. A stale pin (event removed or passed) silently falls back to the soonest upcoming event. Per Customize semantics, the pin is per-session unless saved via `M-x customize-save-variable` or set in your init file with `setopt` / `customize-set-variable`.
+
 ## [1.1.0] - 2026-05-06 [Released]
 
 ### Added
@@ -36,7 +42,8 @@ Initial release.
 - Versioned persistence to `countdown-modeline-events-file` (defaults to `~/.emacs.d/countdown-modeline-events.eld`); legacy bare-list files load and are upgraded on next save.
 - `countdown-modeline-save-events-on-change` defcustom for automatic persistence after every add or remove. Save failures surface as a warning rather than an error.
 
-[Unreleased]: https://github.com/jholland82/countdown-modeline/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jholland82/countdown-modeline/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.1.0
 [1.0.1]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.0.1
 [1.0.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.0.0

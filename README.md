@@ -62,6 +62,10 @@ Each entry in `countdown-modeline-events` is a list `(NAME DATE &optional PREFIX
 
 If you change `countdown-modeline-events` via `setq` after the mode is enabled, run `M-x countdown-modeline-refresh` (or use `customize-set-variable` / `setopt`, which refresh automatically).
 
+By default, the soonest upcoming event is shown. To pin a specific upcoming event instead, use `M-x countdown-modeline-pin-event`. If the pinned event passes its date or is removed, the display silently falls back to the soonest upcoming event until you pick a new one. Clear the pin with `M-x countdown-modeline-unpin-event`.
+
+The pin lives in `countdown-modeline-pinned-event`, a defcustom — `M-x countdown-modeline-pin-event` only sets the in-memory value for the current session. To make a pin survive across Emacs restarts, save it via Customize (e.g. `M-x customize-save-variable RET countdown-modeline-pinned-event RET`) or set it directly in your init file with `setopt` or `customize-set-variable`.
+
 ### Interactive commands
 
 | Command | Description |
@@ -69,6 +73,8 @@ If you change `countdown-modeline-events` via `setq` after the mode is enabled, 
 | `M-x countdown-modeline-add-event` | Add or update an event. Offers completion over existing names; empty RET on the date or prefix prompt keeps the existing value when updating. |
 | `M-x countdown-modeline-remove-event` | Remove an event by name (with completion). |
 | `M-x countdown-modeline-list-events` | Show all events in a help buffer, sorted by days remaining (soonest first; past events at the bottom). |
+| `M-x countdown-modeline-pin-event` | Pin a specific event to the modeline display. Completion is offered over upcoming-or-today events only, sorted soonest first and annotated with each event's date and days remaining. The soonest upcoming event (or your current pin, if it is still upcoming) is the default — press RET to accept it, or use TAB / your completion UI's navigation to choose another. |
+| `M-x countdown-modeline-unpin-event` | Clear the pin and revert to showing the soonest upcoming event. |
 | `M-x countdown-modeline-count-upcoming-events` | Display the number of upcoming events (past and invalid-date events are skipped). |
 | `M-x countdown-modeline-count-past-events` | Display the number of past events (upcoming and invalid-date events are skipped). |
 | `M-x countdown-modeline-count-all-events` | Display the total number of events configured, including past and invalid-date entries. |

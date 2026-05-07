@@ -2,7 +2,7 @@
 
 ;; Author: Jeffrey Holland <jeff.holland@gmail.com>
 ;; Maintainer: Jeffrey Holland <jeff.holland@gmail.com>
-;; Version: 1.1.0
+;; Version: 1.2.0
 ;; URL: https://github.com/jholland82/countdown-modeline
 ;; Keywords: convenience, modeline
 ;; Package-Requires: ((emacs "27.1"))
@@ -104,6 +104,23 @@ list (no envelope) are also accepted on load."
   :type 'file
   :group 'countdown-modeline)
 
+(defcustom countdown-modeline-pinned-event nil
+  "Name of the event to display in the modeline, or nil for auto.
+When nil, the soonest upcoming event is shown (the default behavior).
+When set to a string naming an upcoming event, that event is shown
+instead.  If the named event is missing or has passed, the display
+silently falls back to the soonest upcoming event.
+
+Set interactively via `countdown-modeline-pin-event' and cleared via
+`countdown-modeline-unpin-event'."
+  :type '(choice (const :tag "Auto (soonest upcoming)" nil)
+                 (string :tag "Event name"))
+  :set (lambda (sym val)
+         (set-default sym val)
+         (when (bound-and-true-p countdown-modeline-mode)
+           (countdown-modeline--update)))
+  :group 'countdown-modeline)
+
 (defcustom countdown-modeline-save-events-on-change nil
   "If non-nil, write events to disk after every add or remove.
 Applies whether the change is made interactively or programmatically.
@@ -176,20 +193,26 @@ The result may be negative for past dates."
     (when target (- target (countdown-modeline--today)))))
 
 (defun countdown-modeline--next-event ()
-  "Return (NAME DAYS PREFIX) for the soonest upcoming event, or nil.
-PREFIX is nil when the event has no prefix string.  Events with
-invalid or past dates are skipped."
+  "Return (NAME DAYS PREFIX) for the event to display, or nil.
+If `countdown-modeline-pinned-event' names an upcoming event, that
+event is returned.  Otherwise the soonest upcoming event is
+returned.  Past events and events with invalid dates are skipped
+in both branches; a stale pin (missing or past event) silently
+falls back to the soonest upcoming event."
   (let ((today (countdown-modeline--today))
-        next)
+        pinned soonest)
     (dolist (event countdown-modeline-events)
       (pcase-let ((`(,name ,date ,prefix) event))
         (let ((target (countdown-modeline--parse-date date)))
           (when target
             (let ((days (- target today)))
-              (when (and (>= days 0)
-                         (or (null next) (< days (cadr next))))
-                (setq next (list name days prefix))))))))
-    next))
+              (when (>= days 0)
+                (when (and countdown-modeline-pinned-event
+                           (equal name countdown-modeline-pinned-event))
+                  (setq pinned (list name days prefix)))
+                (when (or (null soonest) (< days (cadr soonest)))
+                  (setq soonest (list name days prefix)))))))))
+    (or pinned soonest)))
 
 (defun countdown-modeline--valid-events-p (events)
   "Return non-nil if EVENTS is a well-formed events list.
@@ -366,6 +389,22 @@ events changed; call `countdown-modeline-save-events' to retry."
                                 (error-message-string err))
                         :warning)))))
 
+(defun countdown-modeline--upcoming-events-by-soonest ()
+  "Return upcoming events from `countdown-modeline-events', soonest first.
+Past events and events with invalid dates are excluded.  Each
+returned entry preserves its original (NAME DATE &optional PREFIX)
+shape."
+  (let ((upcoming
+         (seq-filter
+          (lambda (event)
+            (let ((days (countdown-modeline--days-until (nth 1 event))))
+              (and days (>= days 0))))
+          countdown-modeline-events)))
+    (sort (copy-sequence upcoming)
+          (lambda (a b)
+            (< (countdown-modeline--days-until (nth 1 a))
+               (countdown-modeline--days-until (nth 1 b)))))))
+
 (defun countdown-modeline--sort-key (days)
   "Return a (GROUP . SUB) sort key for DAYS remaining.
 GROUP orders future before past before invalid; SUB orders within
@@ -461,6 +500,71 @@ past events (most recent first) and any with invalid dates."
                               date
                               (if prefix (concat prefix " ") "")
                               name)))))))))
+
+;;;###autoload
+(defun countdown-modeline-pin-event (name)
+  "Pin NAME as the event to display in the modeline.
+Interactively, completion is offered over upcoming-or-today events
+only, sorted soonest first and annotated with each event's date and
+days remaining.  The current pin (when still upcoming) or otherwise
+the soonest upcoming event is offered as the default, so an empty
+RET accepts it; use TAB or your completion UI's navigation keys to
+choose a different event.
+
+Programmatically, an empty or nil NAME clears the pin.  A name
+that does not match any current upcoming event is still stored,
+but the display silently falls back to the soonest upcoming event
+until the pin matches an upcoming event again (or is cleared)."
+  (interactive
+   (let ((upcoming (countdown-modeline--upcoming-events-by-soonest)))
+     ;; Outer `let' validates non-empty before the `let*' below pays the
+     ;; cost of computing the alignment width and per-event annotations.
+     (when (null upcoming)
+       (user-error "No upcoming events to pin"))
+     (let* ((names (mapcar #'car upcoming))
+            (current countdown-modeline-pinned-event)
+            (default (if (and current (seq-contains-p names current))
+                         current
+                       (car names)))
+            (max-name-len (apply #'max 0 (mapcar #'length names)))
+            ;; Pre-build name -> annotation once.  Each annotation begins
+            ;; with leading whitespace sized to push the date column past
+            ;; the longest candidate, so columns line up across entries.
+            (annotations
+             (mapcar
+              (lambda (event)
+                (pcase-let* ((`(,n ,date ,prefix) event)
+                             (days (countdown-modeline--days-until date))
+                             (pad (make-string
+                                   (+ 2 (- max-name-len (length n)))
+                                   ?\s)))
+                  (cons n
+                        (format "%s%s%s  %d day%s"
+                                pad
+                                (if prefix (concat prefix " ") "")
+                                date
+                                days
+                                (if (= days 1) "" "s")))))
+              upcoming))
+            (annotation-fn (lambda (cand) (cdr (assoc cand annotations))))
+            (completion-extra-properties
+             (list :annotation-function annotation-fn)))
+       (list (completing-read
+              (format "Pin event (default %s): " default)
+              names nil t nil nil default)))))
+  (when (and (stringp name) (string-blank-p name))
+    (setq name nil))
+  (setq countdown-modeline-pinned-event name)
+  (countdown-modeline--update)
+  (message (if name
+               (format "Pinned event: %s" name)
+             "Cleared event pin")))
+
+;;;###autoload
+(defun countdown-modeline-unpin-event ()
+  "Clear the event pin, reverting to the soonest upcoming event."
+  (interactive)
+  (countdown-modeline-pin-event nil))
 
 ;;;###autoload
 (defun countdown-modeline-save-events ()

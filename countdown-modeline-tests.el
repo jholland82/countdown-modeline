@@ -480,6 +480,198 @@ caller sees a warning, not a propagated error."
           (should (file-directory-p subdir)))
       (delete-directory parent t))))
 
+;;;; pin-event / unpin-event
+
+(ert-deftest countdown-modeline-test-pin-honored ()
+  "A pin to an upcoming event makes that event the displayed one."
+  (let ((countdown-modeline-events
+         (list (list "Soon"  (countdown-modeline-tests--offset-date 3))
+               (list "Later" (countdown-modeline-tests--offset-date 30))))
+        (countdown-modeline-pinned-event "Later"))
+    (let ((next (countdown-modeline--next-event)))
+      (should (equal "Later" (nth 0 next)))
+      (should (= 30 (nth 1 next))))))
+
+(ert-deftest countdown-modeline-test-pin-falls-back-when-event-missing ()
+  "A pin to a name not in the events list silently falls back to soonest."
+  (let ((countdown-modeline-events
+         (list (list "Soon" (countdown-modeline-tests--offset-date 3))))
+        (countdown-modeline-pinned-event "DoesNotExist"))
+    (should (equal "Soon" (nth 0 (countdown-modeline--next-event))))))
+
+(ert-deftest countdown-modeline-test-pin-falls-back-when-event-past ()
+  "A pin whose event has passed silently falls back to soonest upcoming."
+  (let ((countdown-modeline-events
+         (list (list "Past"   (countdown-modeline-tests--offset-date -1))
+               (list "Future" (countdown-modeline-tests--offset-date 5))))
+        (countdown-modeline-pinned-event "Past"))
+    (should (equal "Future" (nth 0 (countdown-modeline--next-event))))))
+
+(ert-deftest countdown-modeline-test-pin-with-no-events-returns-nil ()
+  "A pin set when the events list is empty produces no displayed event."
+  (let ((countdown-modeline-events nil)
+        (countdown-modeline-pinned-event "Whatever"))
+    (should (null (countdown-modeline--next-event)))))
+
+(ert-deftest countdown-modeline-test-pin-event-stores-name ()
+  (let ((countdown-modeline-events
+         (list (list "Vacation" (countdown-modeline-tests--offset-date 5))))
+        (countdown-modeline-pinned-event nil))
+    (countdown-modeline-pin-event "Vacation")
+    (should (equal "Vacation" countdown-modeline-pinned-event))))
+
+(ert-deftest countdown-modeline-test-pin-event-empty-string-clears ()
+  (let ((countdown-modeline-pinned-event "Existing"))
+    (countdown-modeline-pin-event "")
+    (should (null countdown-modeline-pinned-event))))
+
+(ert-deftest countdown-modeline-test-pin-event-nil-clears ()
+  (let ((countdown-modeline-pinned-event "Existing"))
+    (countdown-modeline-pin-event nil)
+    (should (null countdown-modeline-pinned-event))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-no-upcoming-errors ()
+  "The interactive form errors out if there are no upcoming events to pin."
+  (let ((countdown-modeline-events
+         (list (list "Past" (countdown-modeline-tests--offset-date -1)))))
+    (should-error (call-interactively #'countdown-modeline-pin-event)
+                  :type 'user-error)))
+
+(ert-deftest countdown-modeline-test-upcoming-events-by-soonest-orders ()
+  "Returns upcoming events soonest-first; past and invalid are excluded."
+  (let ((countdown-modeline-events
+         (list (list "Late"  (countdown-modeline-tests--offset-date 30) "L")
+               (list "Past"  (countdown-modeline-tests--offset-date -5) "P")
+               (list "Soon"  (countdown-modeline-tests--offset-date 3)  "S")
+               (list "Bad"   "not-a-date")
+               (list "Plain" (countdown-modeline-tests--offset-date 10)))))
+    (should (equal '("Soon" "Plain" "Late")
+                   (mapcar #'car
+                           (countdown-modeline--upcoming-events-by-soonest))))))
+
+(ert-deftest countdown-modeline-test-upcoming-events-by-soonest-empty ()
+  (let ((countdown-modeline-events
+         (list (list "Past" (countdown-modeline-tests--offset-date -2)))))
+    (should (null (countdown-modeline--upcoming-events-by-soonest)))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-defaults-to-soonest ()
+  "With no pin set, the soonest upcoming event is the default."
+  (let ((countdown-modeline-events
+         (list (list "Late" (countdown-modeline-tests--offset-date 30))
+               (list "Soon" (countdown-modeline-tests--offset-date 3))))
+        (countdown-modeline-pinned-event nil)
+        captured-default
+        captured-prompt)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (prompt _coll &optional _pred _req _init _hist def &rest _)
+                 (setq captured-prompt prompt
+                       captured-default def)
+                 def)))
+      (call-interactively #'countdown-modeline-pin-event))
+    (should (equal "Soon" captured-default))
+    (should (string-match-p "default Soon" captured-prompt))
+    (should (equal "Soon" countdown-modeline-pinned-event))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-keeps-current-pin-as-default ()
+  "When the current pin still names an upcoming event, it is the default."
+  (let ((countdown-modeline-events
+         (list (list "Late" (countdown-modeline-tests--offset-date 30))
+               (list "Soon" (countdown-modeline-tests--offset-date 3))))
+        (countdown-modeline-pinned-event "Late")
+        captured-default)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _coll &optional _pred _req _init _hist def &rest _)
+                 (setq captured-default def)
+                 def)))
+      (call-interactively #'countdown-modeline-pin-event))
+    (should (equal "Late" captured-default))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-stale-pin-falls-back ()
+  "When the current pin no longer names an upcoming event, the soonest
+upcoming event becomes the default."
+  (let ((countdown-modeline-events
+         (list (list "Soon" (countdown-modeline-tests--offset-date 3))))
+        (countdown-modeline-pinned-event "Gone")
+        captured-default)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _coll &optional _pred _req _init _hist def &rest _)
+                 (setq captured-default def)
+                 def)))
+      (call-interactively #'countdown-modeline-pin-event))
+    (should (equal "Soon" captured-default))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-annotates-candidates ()
+  "Each candidate is annotated with its prefix, date, and days remaining,
+with the prefix appearing before the date."
+  (let* ((soon-date (countdown-modeline-tests--offset-date 3))
+         (countdown-modeline-events
+          (list (list "Soon" soon-date "🚀")))
+         captured-extras)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _coll &optional _pred _req _init _hist def &rest _)
+                 (setq captured-extras completion-extra-properties)
+                 def)))
+      (call-interactively #'countdown-modeline-pin-event))
+    (let* ((annotate (plist-get captured-extras :annotation-function))
+           (annotation (funcall annotate "Soon"))
+           (prefix-pos (string-match (regexp-quote "🚀") annotation))
+           (date-pos   (string-match (regexp-quote soon-date) annotation)))
+      (should (functionp annotate))
+      (should (string-match-p "3 days" annotation))
+      (should prefix-pos)
+      (should date-pos)
+      (should (< prefix-pos date-pos)))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-annotation-aligns-columns ()
+  "Annotations are padded so the date column aligns across candidates of
+varying name length."
+  (let* ((short-date (countdown-modeline-tests--offset-date 3))
+         (long-date  (countdown-modeline-tests--offset-date 10))
+         (countdown-modeline-events
+          (list (list "Q4 Planning Offsite" long-date)
+                (list "Soon" short-date)))
+         captured-extras)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _coll &optional _pred _req _init _hist def &rest _)
+                 (setq captured-extras completion-extra-properties)
+                 def)))
+      (call-interactively #'countdown-modeline-pin-event))
+    (let* ((annotate (plist-get captured-extras :annotation-function))
+           (soon-ann (funcall annotate "Soon"))
+           (q4-ann   (funcall annotate "Q4 Planning Offsite"))
+           ;; The visual column where the date appears equals the candidate's
+           ;; character length plus the date's offset within the annotation.
+           (soon-col (+ (length "Soon")
+                        (string-match (regexp-quote short-date) soon-ann)))
+           (q4-col   (+ (length "Q4 Planning Offsite")
+                        (string-match (regexp-quote long-date) q4-ann))))
+      (should (= soon-col q4-col)))))
+
+(ert-deftest countdown-modeline-test-pin-event-interactive-annotation-singular-day ()
+  "Tomorrow's annotation uses singular \"1 day\".  Doubles as the
+nil-prefix coverage: an event without a PREFIX must not introduce
+phantom characters before the date."
+  (let* ((tomorrow-date (countdown-modeline-tests--offset-date 1))
+         (countdown-modeline-events
+          (list (list "Tomorrow" tomorrow-date)))
+         captured-extras)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _coll &optional _pred _req _init _hist def &rest _)
+                 (setq captured-extras completion-extra-properties)
+                 def)))
+      (call-interactively #'countdown-modeline-pin-event))
+    (let* ((annotate (plist-get captured-extras :annotation-function))
+           (annotation (funcall annotate "Tomorrow")))
+      (should (string-match-p "1 day\\b" annotation))
+      (should-not (string-match-p "1 days" annotation))
+      ;; With no prefix, the date follows the leading separator directly.
+      (should (string-prefix-p (concat "  " tomorrow-date "  ") annotation)))))
+
+(ert-deftest countdown-modeline-test-unpin-event-clears-pin ()
+  (let ((countdown-modeline-pinned-event "Whatever"))
+    (countdown-modeline-unpin-event)
+    (should (null countdown-modeline-pinned-event))))
+
 ;;;; count-upcoming-events
 
 (ert-deftest countdown-modeline-test-count-upcoming-empty ()
