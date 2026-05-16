@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-16 [Released]
+
+### Added
+
+- Anniversary events: a fourth optional element on each entry, `ANNIVERSARY-P`, marks the event as recurring so its countdown advances to the next annual occurrence rather than expiring. Dates may now be yearless (`MM-DD`) for anniversaries whose original year is unknown or irrelevant, or full `YYYY-MM-DD` to preserve the original year (e.g. a birth year or wedding year). Anniversaries remain visible in the modeline and in the pin candidate list indefinitely; one-time past events still drop off as before. `countdown-modeline-add-event` accepts an `ANNIVERSARY-P` argument programmatically and prompts y/n when an entered date is yearless or in the past — declining on a yearless date is rejected as an invalid event. Feb 29 anniversaries fall back to Feb 28 in non-leap years. `countdown-modeline-list-events` annotates anniversary entries.
+
+### Changed
+
+- Persisted file format bumped to version 2 to carry the optional anniversary flag. Version 1 files still load; new saves are written as version 2. Older builds reading a v2 file get a clear "newer than supported" error rather than silent corruption.
+
 ## [1.2.0] - 2026-05-07 [Released]
 
 ### Added
@@ -42,7 +52,8 @@ Initial release.
 - Versioned persistence to `countdown-modeline-events-file` (defaults to `~/.emacs.d/countdown-modeline-events.eld`); legacy bare-list files load and are upgraded on next save.
 - `countdown-modeline-save-events-on-change` defcustom for automatic persistence after every add or remove. Save failures surface as a warning rather than an error.
 
-[Unreleased]: https://github.com/jholland82/countdown-modeline/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/jholland82/countdown-modeline/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.3.0
 [1.2.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.1.0
 [1.0.1]: https://github.com/jholland82/countdown-modeline/releases/tag/v1.0.1

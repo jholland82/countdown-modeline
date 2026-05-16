@@ -2,7 +2,7 @@
 
 ;; Author: Jeffrey Holland <jeff.holland@gmail.com>
 ;; Maintainer: Jeffrey Holland <jeff.holland@gmail.com>
-;; Version: 1.2.0
+;; Version: 1.3.0
 ;; URL: https://github.com/jholland82/countdown-modeline
 ;; Keywords: convenience, modeline
 ;; Package-Requires: ((emacs "27.1"))
@@ -30,6 +30,12 @@
 ;; Past events are skipped automatically, and the countdown refreshes at
 ;; local midnight via an internal timer (no external setup required).
 ;;
+;; Anniversaries (birthdays, wedding anniversaries, memorial dates,
+;; etc.) are recurring events: the countdown advances to the next
+;; annual occurrence rather than expiring.  An anniversary's stored
+;; date may be a full YYYY-MM-DD (preserving the original year, e.g.
+;; a birth year) or a yearless MM-DD.
+;;
 ;; The text color changes as the event approaches:
 ;;
 ;;   - Green  : 10+ days remaining
@@ -42,7 +48,9 @@
 ;;   (setq countdown-modeline-events
 ;;         '(("Launch Day" "2026-12-25" "🚀")
 ;;           ("Vacation"   "2026-07-01" "🏖️")
-;;           ("Standup"    "2026-05-10")))    ; emoji is optional
+;;           ("Standup"    "2026-05-10")            ; emoji is optional
+;;           ("Mom's Birthday" "1955-06-15" "🎂" t) ; t = anniversary
+;;           ("Wedding"        "06-15"      "💍" t)))
 ;;   (countdown-modeline-mode 1)
 ;;
 ;; Run M-x countdown-modeline-list-events to discover the available
@@ -60,24 +68,33 @@
 
 (defcustom countdown-modeline-events nil
   "List of events to count down to.
-Each entry is a list (NAME DATE &optional PREFIX):
+Each entry is a list (NAME DATE &optional PREFIX ANNIVERSARY-P):
   - NAME is the event's display name.
-  - DATE is a string in YYYY-MM-DD format.
+  - DATE is a string in YYYY-MM-DD format, or MM-DD for a yearless
+    anniversary.
   - PREFIX is an optional string (typically an emoji) shown
     before the name.
+  - ANNIVERSARY-P, when non-nil, marks the event as recurring; the
+    countdown then advances to the next annual occurrence of DATE
+    rather than expiring.  A yearless MM-DD date is only valid
+    when ANNIVERSARY-P is non-nil.
 
 The soonest upcoming event is shown in the modeline; past events
-are skipped.
+are skipped, but anniversaries always remain visible because their
+\"days until\" is computed against the next occurrence.
 
 Example:
   (setq countdown-modeline-events
         \\='((\"Launch Day\" \"2026-12-25\" \"🚀\")
           (\"Vacation\"   \"2026-07-01\" \"🏖️\")
-          (\"Standup\"    \"2026-05-10\")))"
+          (\"Standup\"    \"2026-05-10\")
+          (\"Mom's Birthday\" \"1955-06-15\" \"🎂\" t)
+          (\"Wedding\"        \"06-15\"      \"💍\" t)))"
   :type '(repeat (list (string :tag "Name")
-                       (string :tag "Date (YYYY-MM-DD)")
+                       (string :tag "Date (YYYY-MM-DD or MM-DD)")
                        (choice (const :tag "No prefix" nil)
-                               (string :tag "Prefix"))))
+                               (string :tag "Prefix"))
+                       (boolean :tag "Anniversary")))
   :set (lambda (sym val)
          (set-default sym val)
          (when (bound-and-true-p countdown-modeline-mode)
@@ -92,10 +109,12 @@ Example:
 single Lisp form, safe to edit by hand:
 
   ;;; countdown-modeline events.  Auto-generated; safe to edit.
-  (:format-version 1
+  (:format-version 2
    :events ((\"Launch Day\" \"2026-12-25\" \"🚀\")
             (\"Vacation\"   \"2026-07-01\" \"🏖️\")
-            (\"Standup\"    \"2026-05-10\")))
+            (\"Standup\"    \"2026-05-10\")
+            (\"Mom's Birthday\" \"1955-06-15\" \"🎂\" t)
+            (\"Wedding\"        \"06-15\"      \"💍\" t)))
 
 For backward compatibility, files containing only a bare events
 list (no envelope) are also accepted on load."
@@ -160,11 +179,16 @@ explicitly to persist changes."
 (defvar countdown-modeline--timer nil
   "Timer that refreshes the countdown at the next local midnight.")
 
-(defconst countdown-modeline--save-format-version 1
+(defconst countdown-modeline--save-format-version 2
   "Current version of the persisted events file format.
 Files written by `countdown-modeline-save-events' carry this version.
 `countdown-modeline-load-events' rejects files whose version is
-greater than this number.")
+greater than this number.
+
+Version history:
+  1 - entries of shape (NAME DATE) or (NAME DATE PREFIX).
+  2 - adds optional ANNIVERSARY-P flag and yearless MM-DD dates;
+      entries may be 4 elements long: (NAME DATE PREFIX ANNIVERSARY-P).")
 
 (defun countdown-modeline--today ()
   "Return today's absolute day number in local time."
@@ -184,47 +208,114 @@ and semantic: \"2026-13-45\" is rejected by round-tripping through
       (when (equal date (format-time-string "%Y-%m-%d" encoded))
         (time-to-days encoded)))))
 
+(defun countdown-modeline--parse-yearless-date (date)
+  "Return (MONTH . DAY) for DATE if it is a valid MM-DD string, else nil.
+Feb 29 is treated as valid (handled per-year by callers)."
+  (when (and (stringp date)
+             (string-match-p "\\`[0-9]\\{2\\}-[0-9]\\{2\\}\\'" date))
+    (let ((month (string-to-number (substring date 0 2)))
+          (day   (string-to-number (substring date 3 5))))
+      (when (and (<= 1 month 12) (<= 1 day 31))
+        ;; Round-trip through a leap year so Feb 29 is accepted.
+        (let ((encoded (encode-time 0 0 0 day month 2024)))
+          (when (equal (format "2024-%02d-%02d" month day)
+                       (format-time-string "%Y-%m-%d" encoded))
+            (cons month day)))))))
+
+(defun countdown-modeline--mmdd-abs (year month day)
+  "Return the absolute day number for YEAR/MONTH/DAY, or nil if invalid.
+Feb 29 in a non-leap YEAR is mapped to Feb 28 of the same YEAR (the
+common civil convention for leap-day anniversaries)."
+  (let* ((encoded (encode-time 0 0 0 day month year))
+         (expected (format "%04d-%02d-%02d" year month day))
+         (actual (format-time-string "%Y-%m-%d" encoded)))
+    (cond
+     ((equal expected actual) (time-to-days encoded))
+     ((and (= month 2) (= day 29))
+      (time-to-days (encode-time 0 0 0 28 2 year)))
+     (t nil))))
+
 (defun countdown-modeline--days-until (date)
   "Return days from today until DATE, or nil if DATE is invalid.
 The result may be negative for past dates."
   (let ((target (countdown-modeline--parse-date date)))
     (when target (- target (countdown-modeline--today)))))
 
+(defun countdown-modeline--days-until-anniversary (date)
+  "Return days from today until the next annual occurrence of DATE.
+DATE may be YYYY-MM-DD or MM-DD; only the month and day are used.
+Returns nil if DATE is malformed.  The result is always non-negative:
+if this year's occurrence has passed, the result counts to next year."
+  (let ((md (or (countdown-modeline--parse-yearless-date date)
+                (when (countdown-modeline--parse-date date)
+                  (cons (string-to-number (substring date 5 7))
+                        (string-to-number (substring date 8 10)))))))
+    (when md
+      (let* ((month (car md))
+             (day (cdr md))
+             (today (countdown-modeline--today))
+             (this-year (decoded-time-year (decode-time)))
+             (target (countdown-modeline--mmdd-abs this-year month day)))
+        (if (and target (>= (- target today) 0))
+            (- target today)
+          (- (countdown-modeline--mmdd-abs (1+ this-year) month day)
+             today))))))
+
+(defun countdown-modeline--event-anniversary-p (event)
+  "Return non-nil if EVENT is flagged as an anniversary."
+  (nth 3 event))
+
+(defun countdown-modeline--days-until-event (event)
+  "Return days until EVENT's next display occurrence, or nil if invalid.
+For anniversaries, always returns a non-negative count to the next
+annual occurrence.  For non-anniversaries, returns the literal signed
+days from today to the stored date (negative for past)."
+  (if (countdown-modeline--event-anniversary-p event)
+      (countdown-modeline--days-until-anniversary (nth 1 event))
+    (countdown-modeline--days-until (nth 1 event))))
+
 (defun countdown-modeline--next-event ()
   "Return (NAME DAYS PREFIX) for the event to display, or nil.
-If `countdown-modeline-pinned-event' names an upcoming event, that
-event is returned.  Otherwise the soonest upcoming event is
-returned.  Past events and events with invalid dates are skipped
-in both branches; a stale pin (missing or past event) silently
-falls back to the soonest upcoming event."
-  (let ((today (countdown-modeline--today))
-        pinned soonest)
+If `countdown-modeline-pinned-event' names an event whose effective
+days remaining is non-negative, that event is returned.  Otherwise
+the event with the smallest non-negative days remaining is returned.
+Anniversaries always have a non-negative count (to their next annual
+occurrence) and so always remain eligible; one-time past events and
+events with invalid dates are skipped.  A stale pin silently falls
+back to the soonest event."
+  (let (pinned soonest)
     (dolist (event countdown-modeline-events)
-      (pcase-let ((`(,name ,date ,prefix) event))
-        (let ((target (countdown-modeline--parse-date date)))
-          (when target
-            (let ((days (- target today)))
-              (when (>= days 0)
-                (when (and countdown-modeline-pinned-event
-                           (equal name countdown-modeline-pinned-event))
-                  (setq pinned (list name days prefix)))
-                (when (or (null soonest) (< days (cadr soonest)))
-                  (setq soonest (list name days prefix)))))))))
+      (let ((days (countdown-modeline--days-until-event event)))
+        (when (and days (>= days 0))
+          (let ((name (nth 0 event))
+                (prefix (nth 2 event)))
+            (when (and countdown-modeline-pinned-event
+                       (equal name countdown-modeline-pinned-event))
+              (setq pinned (list name days prefix)))
+            (when (or (null soonest) (< days (cadr soonest)))
+              (setq soonest (list name days prefix)))))))
     (or pinned soonest)))
 
 (defun countdown-modeline--valid-events-p (events)
   "Return non-nil if EVENTS is a well-formed events list.
-A well-formed list contains entries of the form (NAME DATE) or
-\(NAME DATE PREFIX) where each present element is a string (PREFIX
-may also be nil)."
+A well-formed list contains entries of the form
+  (NAME DATE)
+  (NAME DATE PREFIX)
+  (NAME DATE PREFIX ANNIVERSARY-P)
+where NAME is a string, DATE is a YYYY-MM-DD or MM-DD string, PREFIX
+is a string or nil, and ANNIVERSARY-P is a boolean.  A yearless
+MM-DD DATE is only valid when ANNIVERSARY-P is non-nil."
   (and (listp events)
        (seq-every-p
         (lambda (e)
           (and (listp e)
-               (<= 2 (length e) 3)
+               (<= 2 (length e) 4)
                (stringp (nth 0 e))
                (stringp (nth 1 e))
-               (or (null (nth 2 e)) (stringp (nth 2 e)))))
+               (or (null (nth 2 e)) (stringp (nth 2 e)))
+               (or (countdown-modeline--parse-date (nth 1 e))
+                   (and (countdown-modeline--parse-yearless-date (nth 1 e))
+                        (nth 3 e)))))
         events)))
 
 (defun countdown-modeline--extract-events (form)
@@ -320,52 +411,95 @@ or via `countdown-modeline-add-event'/`-remove-event'/`-load-events'."
   (countdown-modeline--update))
 
 ;;;###autoload
-(defun countdown-modeline-add-event (name date &optional prefix)
-  "Add an event with NAME, DATE (YYYY-MM-DD), and optional PREFIX.
+(defun countdown-modeline-add-event (name date &optional prefix anniversary-p)
+  "Add an event with NAME, DATE, optional PREFIX, and optional ANNIVERSARY-P.
+DATE is a YYYY-MM-DD string, or MM-DD when ANNIVERSARY-P is non-nil.
 PREFIX is a string (typically an emoji) shown before the name; an
-empty string is treated as nil.  If an event with the same NAME
-already exists, it is updated.
+empty string is treated as nil.  ANNIVERSARY-P, when non-nil, marks
+the event as recurring: its countdown advances to the next annual
+occurrence rather than expiring after the date passes.
 
-Signals a `user-error' when NAME is empty or DATE is not a valid
-YYYY-MM-DD calendar date.
+If an event with the same NAME already exists, it is updated.
 
-Interactively, completion is offered over existing names; an empty
-RET on the date or prefix prompt accepts the existing value when
-updating."
+Signals a `user-error' when NAME is empty, DATE is malformed, or
+DATE is yearless without ANNIVERSARY-P set.
+
+Interactively, completion is offered over existing names.  A
+yearless or past date triggers a y/n prompt for anniversary status;
+for a yearless date, declining is rejected as an incorrect event."
   (interactive
    (let* ((existing-names (mapcar #'car countdown-modeline-events))
           (name (completing-read "Event name: " existing-names nil nil))
           (existing (cdr (assoc name countdown-modeline-events)))
           (default-date (or (car existing) ""))
           (default-prefix (or (cadr existing) ""))
-          (date (let ((prompt (format "Event date (YYYY-MM-DD)%s: "
-                                      (if (string-blank-p default-date) ""
-                                        (format " (default %s)"
-                                                default-date))))
-                      (input nil))
-                  (while (not (countdown-modeline--parse-date
-                               (setq input (read-string
-                                            prompt nil nil default-date))))
-                    (message "Invalid date %S; expected YYYY-MM-DD" input)
-                    (sit-for 1))
-                  input))
+          (default-anniv (nth 2 existing))
+          (date (countdown-modeline--read-date-interactively default-date))
+          (anniversary-p (countdown-modeline--read-anniversary-interactively
+                          date default-anniv))
           (raw-prefix (read-string
                        (format "Prefix, e.g. emoji (RET to %s): "
                                (if (string-blank-p default-prefix)
                                    "skip"
                                  (format "keep %s" default-prefix)))
                        nil nil default-prefix)))
-     (list name date (and (not (string-blank-p raw-prefix)) raw-prefix))))
+     (list name date
+           (and (not (string-blank-p raw-prefix)) raw-prefix)
+           anniversary-p)))
   (when (or (not (stringp name)) (string-blank-p name))
     (user-error "Event name must be a non-empty string"))
-  (unless (countdown-modeline--parse-date date)
-    (user-error "Invalid event date %S (expected YYYY-MM-DD)" date))
+  (let ((full (countdown-modeline--parse-date date))
+        (partial (countdown-modeline--parse-yearless-date date)))
+    (cond
+     ((not (or full partial))
+      (user-error "Invalid event date %S (expected YYYY-MM-DD or MM-DD)" date))
+     ((and partial (not anniversary-p))
+      (user-error
+       "Yearless date %S requires an anniversary marker" date))))
   (when (and prefix (string-blank-p prefix))
     (setq prefix nil))
   (setf (alist-get name countdown-modeline-events nil nil #'equal)
-        (if prefix (list date prefix) (list date)))
+        (cond
+         (anniversary-p (list date prefix t))
+         (prefix        (list date prefix))
+         (t             (list date))))
   (countdown-modeline--update)
   (countdown-modeline--maybe-auto-save))
+
+(defun countdown-modeline--read-date-interactively (default-date)
+  "Prompt for a date, looping until the input parses.
+Accepts YYYY-MM-DD or MM-DD.  DEFAULT-DATE, when non-empty, is
+shown as the prompt default and pre-filled in the minibuffer."
+  (let ((prompt (format "Event date (YYYY-MM-DD or MM-DD)%s: "
+                        (if (string-blank-p default-date) ""
+                          (format " (default %s)" default-date))))
+        (input nil))
+    (while (not (or (countdown-modeline--parse-date
+                     (setq input (read-string prompt nil nil default-date)))
+                    (countdown-modeline--parse-yearless-date input)))
+      (message "Invalid date %S; expected YYYY-MM-DD or MM-DD" input)
+      (sit-for 1))
+    input))
+
+(defun countdown-modeline--read-anniversary-interactively (date default-anniv)
+  "Return non-nil if DATE should be treated as an anniversary.
+For a yearless DATE, the user is asked to confirm; declining
+signals `user-error' since a yearless non-anniversary event is
+invalid.  For a past full DATE, the user is asked and the answer
+is returned.  For a future full DATE, returns DEFAULT-ANNIV
+unchanged (preserving the existing flag when updating)."
+  (cond
+   ((countdown-modeline--parse-yearless-date date)
+    (unless (y-or-n-p
+             (format "Date %s has no year; mark as anniversary? " date))
+      (user-error
+       "Yearless date %S requires anniversary confirmation" date))
+    t)
+   ((let ((days (countdown-modeline--days-until date)))
+      (and days (< days 0)))
+    (y-or-n-p
+     (format "Date %s is in the past; mark as anniversary? " date)))
+   (t default-anniv)))
 
 ;;;###autoload
 (defun countdown-modeline-remove-event (name)
@@ -395,14 +529,15 @@ events changed; call `countdown-modeline-save-events' to retry."
 
 (defun countdown-modeline--upcoming-events-by-soonest ()
   "Return upcoming events from `countdown-modeline-events', soonest first.
-Past events and events with invalid dates are excluded.  Each
-returned entry preserves its original (NAME DATE &optional PREFIX)
+One-time past events and events with invalid dates are excluded;
+anniversaries are always included (their countdown is to the next
+annual occurrence).  Each returned entry preserves its original
 shape."
   (let ((decorated
          (delq nil
                (mapcar
                 (lambda (event)
-                  (let ((days (countdown-modeline--days-until (nth 1 event))))
+                  (let ((days (countdown-modeline--days-until-event event)))
                     (when (and days (>= days 0))
                       (cons days event))))
                 countdown-modeline-events))))
@@ -420,10 +555,13 @@ each group: future ascending (soonest first), past by recency
 
 (defun countdown-modeline--count-when (predicate)
   "Return the number of events whose days-until result satisfies PREDICATE.
-Events with invalid dates have a nil days-until and are never counted."
+For anniversaries the days-until is to the next annual occurrence
+\(so it is never negative); for one-time events it is the literal
+signed days from today.  Events with invalid dates have nil
+days-until and are never counted."
   (seq-count
    (lambda (event)
-     (let ((days (countdown-modeline--days-until (nth 1 event))))
+     (let ((days (countdown-modeline--days-until-event event)))
        (and days (funcall predicate days))))
    countdown-modeline-events))
 
@@ -475,14 +613,17 @@ When called interactively, also display the count in the echo area."
 (defun countdown-modeline-list-events ()
   "Display all configured events with days remaining in a help buffer.
 Upcoming events are shown first (soonest at the top), followed by
-past events (most recent first) and any with invalid dates."
+past events (most recent first) and any with invalid dates.
+Anniversaries are marked and always sort with the upcoming group."
   (interactive)
-  (let ((rows (mapcar (lambda (event)
-                        (list (countdown-modeline--days-until (nth 1 event))
-                              (nth 0 event)
-                              (nth 1 event)
-                              (nth 2 event)))
-                      countdown-modeline-events)))
+  (let ((rows (mapcar
+               (lambda (event)
+                 (list (countdown-modeline--days-until-event event)
+                       (nth 0 event)
+                       (nth 1 event)
+                       (nth 2 event)
+                       (countdown-modeline--event-anniversary-p event)))
+               countdown-modeline-events)))
     (setq rows (sort rows
                      (lambda (a b)
                        (let ((ka (countdown-modeline--sort-key (car a)))
@@ -497,12 +638,13 @@ past events (most recent first) and any with invalid dates."
         (if (null rows)
             (insert "  (no events configured)\n")
           (dolist (row rows)
-            (pcase-let ((`(,days ,name ,date ,prefix) row))
-              (insert (format "%-6s  %-12s  %s%s\n"
+            (pcase-let ((`(,days ,name ,date ,prefix ,anniv) row))
+              (insert (format "%-6s  %-12s  %s%s%s\n"
                               (if days (number-to-string days) "?")
                               date
                               (if prefix (concat prefix " ") "")
-                              name)))))))))
+                              name
+                              (if anniv " (anniversary)" ""))))))))))
 
 ;;;###autoload
 (defun countdown-modeline-pin-event (name)
@@ -536,18 +678,22 @@ until the pin matches an upcoming event again (or is cleared)."
             (annotations
              (mapcar
               (lambda (event)
-                (pcase-let* ((`(,n ,date ,prefix) event)
-                             (days (countdown-modeline--days-until date))
-                             (pad (make-string
-                                   (+ 2 (- max-name-len (length n)))
-                                   ?\s)))
+                (let* ((n (nth 0 event))
+                       (date (nth 1 event))
+                       (prefix (nth 2 event))
+                       (anniv (countdown-modeline--event-anniversary-p event))
+                       (days (countdown-modeline--days-until-event event))
+                       (pad (make-string
+                             (+ 2 (- max-name-len (length n)))
+                             ?\s)))
                   (cons n
-                        (format "%s%s%s  %d day%s"
+                        (format "%s%s%s  %d day%s%s"
                                 pad
                                 (if prefix (concat prefix " ") "")
                                 date
                                 days
-                                (if (= days 1) "" "s")))))
+                                (if (= days 1) "" "s")
+                                (if anniv " (anniversary)" "")))))
               upcoming))
             (annotation-fn (lambda (cand) (cdr (assoc cand annotations))))
             (completion-extra-properties

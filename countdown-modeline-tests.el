@@ -763,5 +763,189 @@ phantom characters before the date."
   (should (null countdown-modeline--timer))
   (should (null countdown-modeline--string)))
 
+;;;; anniversaries
+
+(defun countdown-modeline-tests--mmdd-offset (n)
+  "Return an MM-DD string for the month/day N days from today."
+  (format-time-string "%m-%d" (time-add (current-time) (days-to-time n))))
+
+(defun countdown-modeline-tests--full-offset (n)
+  "Return a full date string for N days from today (alias for clarity)."
+  (countdown-modeline-tests--offset-date n))
+
+(ert-deftest countdown-modeline-test-parse-yearless-date-valid ()
+  (should (equal '(6 . 15) (countdown-modeline--parse-yearless-date "06-15")))
+  (should (equal '(2 . 29) (countdown-modeline--parse-yearless-date "02-29"))))
+
+(ert-deftest countdown-modeline-test-parse-yearless-date-rejects ()
+  (should-not (countdown-modeline--parse-yearless-date "13-01"))
+  (should-not (countdown-modeline--parse-yearless-date "06-32"))
+  (should-not (countdown-modeline--parse-yearless-date "2026-06-15"))
+  (should-not (countdown-modeline--parse-yearless-date "6-15"))
+  (should-not (countdown-modeline--parse-yearless-date ""))
+  (should-not (countdown-modeline--parse-yearless-date nil)))
+
+(ert-deftest countdown-modeline-test-days-until-anniversary-mmdd ()
+  "An MM-DD date 5 days hence reports 5 days remaining."
+  (should (= 5 (countdown-modeline--days-until-anniversary
+                (countdown-modeline-tests--mmdd-offset 5)))))
+
+(ert-deftest countdown-modeline-test-days-until-anniversary-full-past-rolls-over ()
+  "A full past anniversary (e.g. 1985-MM-DD where MM-DD is in the future
+this year) reports days to this year's occurrence."
+  (let* ((md (countdown-modeline-tests--mmdd-offset 7))
+         (full (format "1985-%s" md)))
+    (should (= 7 (countdown-modeline--days-until-anniversary full)))))
+
+(ert-deftest countdown-modeline-test-days-until-anniversary-today ()
+  (let ((md (countdown-modeline-tests--mmdd-offset 0)))
+    (should (= 0 (countdown-modeline--days-until-anniversary md)))))
+
+(ert-deftest countdown-modeline-test-days-until-anniversary-yesterday-rolls-to-next-year ()
+  "If today is 2026-05-15 and the anniversary is 05-14, the next
+occurrence is 2027-05-14 — roughly 365 days away (allowing for the
+non-leap window).  We assert a wide bound to stay robust across
+calendar boundaries."
+  (let* ((md (countdown-modeline-tests--mmdd-offset -1))
+         (days (countdown-modeline--days-until-anniversary md)))
+    (should (and (<= 360 days) (<= days 367)))))
+
+(ert-deftest countdown-modeline-test-days-until-anniversary-invalid ()
+  (should-not (countdown-modeline--days-until-anniversary "garbage"))
+  (should-not (countdown-modeline--days-until-anniversary "")))
+
+(ert-deftest countdown-modeline-test-days-until-event-dispatches ()
+  "Non-anniversaries use signed days; anniversaries use next-occurrence."
+  (let* ((past-md (countdown-modeline-tests--mmdd-offset -2))
+         (past-full (countdown-modeline-tests--full-offset -2))
+         (past-full-with-old-year
+          (format "1990-%s"
+                  (format-time-string "%m-%d"
+                                      (time-subtract (current-time)
+                                                     (days-to-time 2))))))
+    ;; Non-anniversary past event reports negative days.
+    (should (= -2 (countdown-modeline--days-until-event
+                   (list "X" past-full))))
+    ;; Same date marked anniversary reports days to next year's occurrence.
+    (let ((days (countdown-modeline--days-until-event
+                 (list "X" past-full-with-old-year nil t))))
+      (should (and (<= 360 days) (<= days 367))))
+    ;; Yearless anniversary works too.
+    (let ((days (countdown-modeline--days-until-event
+                 (list "X" past-md nil t))))
+      (should (and (<= 360 days) (<= days 367))))))
+
+(ert-deftest countdown-modeline-test-mmdd-abs-non-leap-feb-29-maps-to-feb-28 ()
+  "Feb 29 in a non-leap year maps to Feb 28 of the same year."
+  (let ((feb-28-2025 (countdown-modeline--mmdd-abs 2025 2 28))
+        (feb-29-2025 (countdown-modeline--mmdd-abs 2025 2 29)))
+    (should (= feb-28-2025 feb-29-2025))))
+
+(ert-deftest countdown-modeline-test-mmdd-abs-leap-feb-29 ()
+  "Feb 29 in a leap year resolves to the actual Feb 29."
+  (let ((feb-29-2024 (countdown-modeline--mmdd-abs 2024 2 29))
+        (feb-28-2024 (countdown-modeline--mmdd-abs 2024 2 28)))
+    (should (= (1+ feb-28-2024) feb-29-2024))))
+
+(ert-deftest countdown-modeline-test-valid-events-anniversary-shapes ()
+  "Four-element entries with anniversary flag are accepted; yearless
+dates require the flag to be set."
+  (should (countdown-modeline--valid-events-p
+           '(("Mom" "1955-06-15" "🎂" t))))
+  (should (countdown-modeline--valid-events-p
+           '(("Mom" "06-15" nil t))))
+  (should (countdown-modeline--valid-events-p
+           '(("Mom" "06-15" "🎂" t))))
+  ;; Yearless date without anniversary flag is malformed.
+  (should-not (countdown-modeline--valid-events-p
+               '(("Mom" "06-15"))))
+  (should-not (countdown-modeline--valid-events-p
+               '(("Mom" "06-15" "🎂"))))
+  (should-not (countdown-modeline--valid-events-p
+               '(("Mom" "06-15" "🎂" nil)))))
+
+(ert-deftest countdown-modeline-test-next-event-includes-anniversary ()
+  "An anniversary with a past stored date still gets selected if its
+next occurrence beats the soonest one-time event."
+  (let* ((md (countdown-modeline-tests--mmdd-offset 2))
+         (countdown-modeline-events
+          (list (list "Future"   (countdown-modeline-tests--full-offset 10))
+                (list "Birthday" (format "1955-%s" md) "🎂" t))))
+    (let ((next (countdown-modeline--next-event)))
+      (should (equal "Birthday" (nth 0 next)))
+      (should (= 2 (nth 1 next))))))
+
+(ert-deftest countdown-modeline-test-upcoming-includes-anniversaries-with-past-date ()
+  "An anniversary appears in upcoming-by-soonest even if its stored
+date is in the past."
+  (let* ((past-md (countdown-modeline-tests--mmdd-offset -10))
+         (past-full (format "1990-%s" past-md))
+         (countdown-modeline-events
+          (list (list "Old" past-full nil t)
+                (list "Real-past" (countdown-modeline-tests--full-offset -5)))))
+    (let ((names (mapcar #'car
+                         (countdown-modeline--upcoming-events-by-soonest))))
+      (should (member "Old" names))
+      (should-not (member "Real-past" names)))))
+
+(ert-deftest countdown-modeline-test-add-event-anniversary-full-date ()
+  "Programmatic add-event with anniversary-p=t stores the 4-element shape."
+  (let ((countdown-modeline-events nil))
+    (countdown-modeline-add-event "Mom" "1955-06-15" "🎂" t)
+    (should (equal countdown-modeline-events
+                   '(("Mom" "1955-06-15" "🎂" t))))))
+
+(ert-deftest countdown-modeline-test-add-event-anniversary-yearless ()
+  "Programmatic add-event accepts MM-DD when anniversary-p is set."
+  (let ((countdown-modeline-events nil))
+    (countdown-modeline-add-event "Wedding" "06-15" "💍" t)
+    (should (equal countdown-modeline-events
+                   '(("Wedding" "06-15" "💍" t))))))
+
+(ert-deftest countdown-modeline-test-add-event-anniversary-yearless-no-prefix ()
+  "An anniversary without a prefix still stores 4 elements."
+  (let ((countdown-modeline-events nil))
+    (countdown-modeline-add-event "X" "06-15" nil t)
+    (should (equal countdown-modeline-events
+                   '(("X" "06-15" nil t))))))
+
+(ert-deftest countdown-modeline-test-add-event-rejects-yearless-without-flag ()
+  "Programmatic add-event rejects MM-DD when anniversary-p is nil."
+  (let ((countdown-modeline-events nil))
+    (should-error (countdown-modeline-add-event "X" "06-15")
+                  :type 'user-error)
+    (should (null countdown-modeline-events))))
+
+(ert-deftest countdown-modeline-test-save-load-anniversary-roundtrip ()
+  "A mix of regular and anniversary events round-trips through disk."
+  (let* ((tmp (make-temp-file "cm-test-" nil ".eld"))
+         (countdown-modeline-events-file tmp)
+         (countdown-modeline-events
+          '(("Plain"   "2026-01-01")
+            ("Mom"     "1955-06-15" "🎂" t)
+            ("Wedding" "06-15"      "💍" t))))
+    (unwind-protect
+        (progn
+          (countdown-modeline-save-events)
+          (let ((countdown-modeline-events nil))
+            (countdown-modeline-load-events)
+            (should (equal countdown-modeline-events
+                           '(("Plain"   "2026-01-01")
+                             ("Mom"     "1955-06-15" "🎂" t)
+                             ("Wedding" "06-15"      "💍" t))))))
+      (when (file-exists-p tmp) (delete-file tmp)))))
+
+(ert-deftest countdown-modeline-test-list-events-marks-anniversaries ()
+  "list-events output marks anniversary entries."
+  (let ((countdown-modeline-events
+         (list (list "Plain" (countdown-modeline-tests--full-offset 3))
+               (list "Anniv" "1985-06-15" nil t))))
+    (save-window-excursion
+      (countdown-modeline-list-events)
+      (with-current-buffer "*countdown-modeline events*"
+        (let ((content (buffer-string)))
+          (should (string-match-p "Anniv.*(anniversary)" content))
+          (should-not (string-match-p "Plain.*(anniversary)" content)))))))
+
 (provide 'countdown-modeline-tests)
 ;;; countdown-modeline-tests.el ends here
